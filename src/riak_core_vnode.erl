@@ -34,6 +34,7 @@
          code_change/4]).
 -export([reply/2]).
 -export([get_mod_index/1]).
+-export([is_handing_off/1]).
 
 -spec behaviour_info(atom()) -> 'undefined' | [{atom(), arity()}].
 behaviour_info(callbacks) ->
@@ -118,6 +119,11 @@ init([Mod, Index, InitialInactivityTimeout]) ->
 
 get_mod_index(VNode) ->
     gen_fsm:sync_send_all_state_event(VNode, get_mod_index).
+
+%% is the vnode currently in handoff? Who's it handing off to?
+%% false | {true, HandOffPid, TargetNode}
+is_handing_off(VNode) ->
+    gen_fsm:sync_send_all_state_event(VNode, is_handing_off).
 
 continue(State) ->
     {next_state, active, State, State#state.inactivity_timeout}.
@@ -221,7 +227,10 @@ handle_event(R=?VNODE_REQ{}, _StateName, State) ->
 handle_event(R=?COVERAGE_REQ{}, _StateName, State) ->
     active(R, State).
 
-
+handle_sync_event(is_handing_off, _From, StateName, State=#state{handoff_pid=undefined}) ->
+    {reply, false, StateName, State, State#state.inactivity_timeout};
+handle_sync_event(is_handling_off, _From, StateName, State=#state{handoff_pid=Pid, handoff_node=TargetNode}) ->
+    {reply, {true, TargetNode, Pid}, StateName, State, State#state.inactivity_timeout};
 handle_sync_event(get_mod_index, _From, StateName,
                   State=#state{index=Idx,mod=Mod}) ->
     {reply, {Mod, Idx}, StateName, State, State#state.inactivity_timeout};
