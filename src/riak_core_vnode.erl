@@ -296,6 +296,7 @@ active(handoff_complete, State=#state{mod=Mod,
                                       handoff_node=HN,
                                       handoff_token=HT}) ->
     riak_core_handoff_manager:release_handoff_lock({Mod, Idx}, HT),
+    riak_core_handoff_manager:remove_handoff(Mod, Idx),
     Mod:handoff_finished(HN, ModState),
     finish_handoff(State);
 active({handoff_error, _Err, _Reason}, State=#state{mod=Mod, 
@@ -303,6 +304,7 @@ active({handoff_error, _Err, _Reason}, State=#state{mod=Mod,
                                                     index=Idx, 
                                                     handoff_token=HT}) ->
     riak_core_handoff_manager:release_handoff_lock({Mod, Idx}, HT),
+    riak_core_handoff_manager:remove_handoff(Mod, Idx),
     %% it would be nice to pass {Err, Reason} to the vnode but the 
     %% API doesn't currently allow for that.
     Mod:handoff_cancelled(ModState),
@@ -524,6 +526,7 @@ start_handoff(State=#state{index=Idx, mod=Mod, modstate=ModState}, TargetNode) -
                                            handoff_token=HandoffToken,
                                            handoff_node=TargetNode},
                     {ok, HandoffPid} = riak_core_handoff_sender:start_link(TargetNode, Mod, Idx),
+                    riak_core_handoff_manager:add_handoff(Mod, Idx, TargetNode),
                     continue(NewState#state{handoff_pid=HandoffPid})
             end
     end.
