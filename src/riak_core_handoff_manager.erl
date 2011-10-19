@@ -74,20 +74,22 @@ handle_call({get_exclusions, Module}, _From, State=#state{excl=Excl}) ->
 handle_call(all_handoffs, _From, State=#state{handoffs=Hoffs}) ->
     {reply, {ok, Hoffs}, State};
 handle_call({get_handoffs, Idx}, _From, State=#state{handoffs=Hoffs}) ->
-    All=[{Mod,proplists:get_value(Idx,ModHoffs)} || {Mod,ModHoffs} <- Hoffs],
-    Filtered=lists:filter(fun ({_,undefined}) -> false;
-                              ({_,_}) -> true
+    All=[{Mod,dict:find(Idx,ModHoffs)} || {Mod,ModHoffs} <- Hoffs],
+    Filtered=lists:filter(fun ({_,{ok,_}}) -> true;
+                              (_) -> false
                           end,
                           All),
-    {reply, {ok, Filtered}, State}.
+    {reply, {ok, [{Mod,Value} || {Mod,{ok,Value}} <- Filtered]}, State}.
 
 handle_cast({add_handoff, {Mod, Idx, Node}}, State=#state{handoffs=Hoffs}) ->
-    ModHoffs=proplists:get_value(Mod,Hoffs,[]),
-    NewHoffs=lists:keystore(Mod,1,Hoffs,{Mod,[{Idx,Node}|ModHoffs]}),
+    ModHoffs=proplists:get_value(Mod,Hoffs,dict:new()),
+    NewModHoffs=dict:store(Idx,Node,ModHoffs),
+    NewHoffs=lists:keystore(Mod,1,Hoffs,{Mod,NewModHoffs}),
     {noreply, State#state{handoffs=NewHoffs}};
 handle_cast({remove_handoff, {Mod, Idx}}, State=#state{handoffs=Hoffs}) ->
-    ModHoffs=proplists:get_value(Mod,Hoffs,[]),
-    NewHoffs=lists:keystore(Mod,1,Hoffs,{Mod,proplists:delete(Idx,ModHoffs)}),
+    ModHoffs=proplists:get_value(Mod,Hoffs,dict:new()),
+    NewModHoffs=dict:erase(Idx,ModHoffs),
+    NewHoffs=lists:keystore(Mod,1,Hoffs,{Mod,NewModHoffs}),
     {noreply, State#state{handoffs=NewHoffs}};
 handle_cast({del_exclusion, {Mod, Idx}}, State=#state{excl=Excl}) ->
     {noreply, State#state{excl=ordsets:del_element({Mod, Idx}, Excl)}};
