@@ -1,8 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_core: Core Riak Application
-%%
-%% Copyright (c) 2007-2011 Basho Technologies, Inc.  All Rights Reserved.
+%% Copyright (c) 2011 Basho Technologies, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,21 +17,26 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%%
-%% @doc This module is a pass-thru to `riak_core_claim' for backwards
-%% compatability.
 
--module(riak_core_new_claim).
--export([new_wants_claim/2, new_choose_claim/2]).
+-module(riak_core_handoff_sup).
+-behaviour(supervisor).
 
-%% @deprecated
-%%
-%% @doc This exists for the sole purpose of backwards compatability.
-new_wants_claim(Ring, Node) ->
-    riak_core_claim:wants_claim_v2(Ring, Node).
+%% beahvior functions
+-export([start_link/0,
+         init/1
+        ]).
 
-%% @deprecated
-%%
-%% @doc This exists for the sole purpose of backwards compatability.
-new_choose_claim(Ring, Node) ->
-    riak_core_claim:choose_claim_v2(Ring, Node).
+-define(CHILD(I,Type), {I,{I,start_link,[]},permanent,brutal_kill,Type,[I]}).
+
+%% begins the supervisor, init/1 will be called
+start_link () ->
+    supervisor:start_link({local,?MODULE},?MODULE,[]).
+
+%% @private
+init ([]) ->
+    {ok,{{one_for_all,10,10},
+         [?CHILD(riak_core_handoff_receiver_sup,supervisor),
+          ?CHILD(riak_core_handoff_sender_sup,supervisor),
+          ?CHILD(riak_core_handoff_listener_sup,supervisor),
+          ?CHILD(riak_core_handoff_manager,worker)
+         ]}}.

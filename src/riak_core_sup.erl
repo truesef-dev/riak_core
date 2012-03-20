@@ -31,7 +31,8 @@
 -export([init/1]).
 
 %% Helper macro for declaring children of supervisor
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
+-define(CHILD(I, Type, Timeout), {I, {I, start_link, []}, permanent, Timeout, Type, [I]}).
+-define(CHILD(I, Type), ?CHILD(I, Type, 5000)).
 -define (IF (Bool, A, B), if Bool -> A; true -> B end).
 
 %% ===================================================================
@@ -59,12 +60,12 @@ init([]) ->
     Children = lists:flatten(
                  [?CHILD(riak_core_sysmon_minder, worker),
                   ?CHILD(riak_core_stat, worker),
-                  ?CHILD(riak_core_vnode_sup, supervisor),
+                  ?CHILD(riak_core_vnode_sup, supervisor, 305000),
                   ?CHILD(riak_core_eventhandler_sup, supervisor),
-                  ?CHILD(riak_core_handoff_manager, worker),
-                  ?CHILD(riak_core_handoff_listener, worker),
+                  ?CHILD(riak_core_handoff_sup, supervisor),
                   ?CHILD(riak_core_ring_events, worker),
                   ?CHILD(riak_core_ring_manager, worker),
+                  ?CHILD(riak_core_vnode_proxy_sup, supervisor),
                   ?CHILD(riak_core_node_watcher_events, worker),
                   ?CHILD(riak_core_node_watcher, worker),
                   ?CHILD(riak_core_vnode_manager, worker),

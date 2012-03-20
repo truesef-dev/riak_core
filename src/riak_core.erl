@@ -22,11 +22,17 @@
 -module(riak_core).
 -export([stop/0, stop/1, join/1, join/4, remove/1, down/1, leave/0,
          remove_from_cluster/1]).
--export([register_vnode_module/1, vnode_modules/0]).
--export([register/1, register/2, bucket_fixups/0]).
+-export([vnode_modules/0]).
+-export([register/1, register/2, bucket_fixups/0, bucket_validators/0]).
+
 -export([add_guarded_event_handler/3, add_guarded_event_handler/4]).
 -export([delete_guarded_event_handler/3]).
+-export([wait_for_application/1, wait_for_service/1]).
 -compile({no_auto_import,[register/2]}).
+
+-define(WAIT_PRINT_INTERVAL, (60 * 1000)).
+-define(WAIT_POLL_INTERVAL, 100).
+
 %% @spec stop() -> ok
 %% @doc Stop the riak application and the calling process.
 stop() -> stop("riak stop requested").
@@ -261,6 +267,12 @@ bucket_fixups() ->
         {ok, Mods} -> Mods
     end.
 
+bucket_validators() ->
+    case application:get_env(riak_core, bucket_validators) of
+        undefined -> [];
+        {ok, Mods} -> Mods
+    end.
+
 %% Get the application name if not supplied, first by get_application
 %% then by searching by module name
 get_app(undefined, Module) ->
@@ -283,23 +295,34 @@ register(_App, []) ->
     %% the ring.
     {ok, _R} = riak_core_ring_manager:ring_trans(fun(R,_A) -> {new_ring, R} end,
                                                  undefined),
+    riak_core_ring_events:force_sync_update(),
     ok;
 register(App, [{bucket_fixup, FixupMod}|T]) ->
     register_mod(get_app(App, FixupMod), FixupMod, bucket_fixups),
     register(App, T);
+register(App, [{repl_helper, FixupMod}|T]) ->
+    register_mod(get_app(App, FixupMod), FixupMod, repl_helper),
+    register(App, T);
 register(App, [{vnode_module, VNodeMod}|T]) ->
     register_mod(get_app(App, VNodeMod), VNodeMod, vnode_modules),
+    register(App, T);
+register(App, [{bucket_validator, ValidationMod}|T]) ->
+    register_mod(get_app(App, ValidationMod), ValidationMod, bucket_validators),
     register(App, T).
 
-register_vnode_module(VNodeMod) when is_atom(VNodeMod)  ->
-    register_mod(get_app(undefined, VNodeMod), VNodeMod, vnode_modules).
-
 register_mod(App, Module, Type) when is_atom(Module), is_atom(Type) ->
+    case Type of
+        vnode_modules ->
+            riak_core_vnode_proxy_sup:start_proxies(Module);
+        _ ->
+            ok
+    end,
     case application:get_env(riak_core, Type) of
         undefined ->
             application:set_env(riak_core, Type, [{App,Module}]);
         {ok, Mods} ->
-            application:set_env(riak_core, Type, [{App,Module}|Mods])
+            application:set_env(riak_core, Type,
+                lists:usort([{App,Module}|Mods]))
     end.
 
 %% @spec add_guarded_event_handler(HandlerMod, Handler, Args) -> AddResult
@@ -348,10 +371,51 @@ app_for_module(Mod) ->
     app_for_module(application:which_applications(), Mod).
 
 app_for_module([], _Mod) ->
-    undefined;
+    {ok, undefined};
 app_for_module([{App,_,_}|T], Mod) ->
     {ok, Mods} = application:get_key(App, modules),
     case lists:member(Mod, Mods) of
         true -> {ok, App};
         false -> app_for_module(T, Mod)
+    end.
+
+
+wait_for_application(App) ->
+    wait_for_application(App, 0).
+wait_for_application(App, Elapsed) ->
+    case lists:keymember(App, 1, application:which_applications()) of
+        true when Elapsed == 0 ->
+            ok;
+        true when Elapsed > 0 ->
+            lager:info("Wait complete for application ~p (~p seconds)", [App, Elapsed div 1000]),
+            ok;
+        false ->
+            %% Possibly print a notice.
+            ShouldPrint = Elapsed rem ?WAIT_PRINT_INTERVAL == 0,
+            case ShouldPrint of
+                true -> lager:info("Waiting for application ~p to start (~p seconds).", [App, Elapsed div 1000]);
+                false -> skip
+            end,
+            timer:sleep(?WAIT_POLL_INTERVAL),
+            wait_for_application(App, Elapsed + ?WAIT_POLL_INTERVAL)
+    end.
+
+wait_for_service(Service) ->
+    wait_for_service(Service, 0).
+wait_for_service(Service, Elapsed) ->
+    case lists:member(Service, riak_core_node_watcher:services(node())) of
+        true when Elapsed == 0 ->
+            ok;
+        true when Elapsed > 0 ->
+            lager:info("Wait complete for service ~p (~p seconds)", [Service, Elapsed div 1000]),
+            ok;
+        false ->
+            %% Possibly print a notice.
+            ShouldPrint = Elapsed rem ?WAIT_PRINT_INTERVAL == 0,
+            case ShouldPrint of
+                true -> lager:info("Waiting for service ~p to start (~p seconds)", [Service, Elapsed div 1000]);
+                false -> skip
+            end,
+            timer:sleep(?WAIT_POLL_INTERVAL),
+            wait_for_service(Service, Elapsed + ?WAIT_POLL_INTERVAL)
     end.

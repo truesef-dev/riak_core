@@ -3,7 +3,7 @@
 {application, riak_core,
 [
   {description, "Riak Core"},
-  {vsn, "1.0.1"},
+  {vsn, "1.1.1"},
   {modules, [
              app_helper,
              bloom,
@@ -28,9 +28,13 @@
              riak_core_eventhandler_sup,
              riak_core_gossip,
              riak_core_handoff_listener,
+             riak_core_handoff_listener_sup,
              riak_core_handoff_manager,
              riak_core_handoff_receiver,
+             riak_core_handoff_receiver_sup,
              riak_core_handoff_sender,
+             riak_core_handoff_sender_sup,
+             riak_core_handoff_sup,
              riak_core_nodeid,
              riak_core_node_watcher,
              riak_core_node_watcher_events,
@@ -51,6 +55,8 @@
              riak_core_vnode,
              riak_core_vnode_manager,
              riak_core_vnode_master,
+             riak_core_vnode_proxy,
+             riak_core_vnode_proxy_sup,
              riak_core_vnode_sup,
              riak_core_vnode_worker,
              riak_core_vnode_worker_pool,
@@ -65,6 +71,7 @@
   {applications, [
                   kernel,
                   stdlib,
+                  lager,
                   sasl,
                   crypto,
                   riak_sysmon,
@@ -96,9 +103,9 @@
          %% Vnode inactivity timeout (how often to check if fallback vnodes
          %% should return their data) in ms.
          {vnode_inactivity_timeout, 60000},
-         
+
          %% Number of VNodes allowed to do handoff concurrently.
-         {handoff_concurrency, 4},
+         {handoff_concurrency, 1},
 
          %% Disable Nagle on HTTP sockets
          {disable_http_nagle, false},
